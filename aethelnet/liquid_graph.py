@@ -231,7 +231,7 @@ class LiquidGraph(nn.Module):
         mask = self.get_node_mask(node_ids, refined_states.device, quarantined_nodes=quarantined_nodes).squeeze(1)
         
         num_nodes = normalized_states.size(0)
-        SHARD_SIZE = 500
+        SHARD_SIZE = 10000
         
         if num_nodes > SHARD_SIZE:
             # PHYSICS SHARDING: Avoid O(N^2) RAM explosion by clustering nodes into random dynamic neighborhoods
