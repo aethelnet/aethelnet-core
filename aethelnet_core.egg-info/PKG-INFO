@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: aethelnet-core
+Version: 1.0.0
+Summary: Continuous Liquid Graph Neural Network (LGNN) Core Engine
+Author: Aethelnet
+Requires-Python: >=3.9
+License-File: LICENSE
+Requires-Dist: torch>=2.0.0
+Requires-Dist: torchdiffeq>=0.2.3
+Requires-Dist: networkx>=3.0
+Requires-Dist: numpy>=1.22.0
+Requires-Dist: scipy>=1.8.0
+Dynamic: author
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

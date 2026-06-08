@@ -137,6 +137,19 @@ class LiquidGraph(nn.Module):
             del self._id_map[node_id]
             del self._safe_map[safe_id]
 
+    def get_node_conviction(self, node_id: str) -> float:
+        import math
+        safe_id = self._safe_id(node_id)
+        if safe_id not in self.nodes:
+            return 0.0
+        
+        with torch.no_grad():
+            state_tensor = self.nodes[safe_id]
+            raw_score = state_tensor.mean().item()
+            conviction = math.tanh(raw_score * 10.0)
+            
+        return conviction
+
     def forward(self, t, latent_states: torch.Tensor) -> torch.Tensor:
         # Stabilize ODE gradients
         latent_states = torch.nan_to_num(latent_states, nan=0.0, posinf=1.0, neginf=-1.0)
@@ -213,28 +226,58 @@ class LiquidGraph(nn.Module):
             for i, sid in enumerate(safe_ids):
                 self.nodes[sid].copy_(refined_states[i])
                 
-        # --- Fast Vectorized Hebbian Edge Evolution ---
+        # --- Fast Vectorized Hebbian Edge Evolution (WITH PHYSICS SHARDING) ---
         normalized_states = refined_states / (refined_states.norm(dim=-1, keepdim=True) + 1e-8)
-        similarity_matrix = torch.matmul(normalized_states, normalized_states.T)
-        
         mask = self.get_node_mask(node_ids, refined_states.device, quarantined_nodes=quarantined_nodes).squeeze(1)
-        valid_mask = torch.outer(mask, mask)
-        valid_mask.fill_diagonal_(0.0) # No self-edges
         
-        similarity_matrix = similarity_matrix * valid_mask
+        num_nodes = normalized_states.size(0)
+        SHARD_SIZE = 500
         
-        # Fast bulk operations instead of O(N^2) python loop
-        high_sim_indices = torch.nonzero(similarity_matrix >= self.resonance_threshold, as_tuple=False)
-        high_sim_indices = high_sim_indices[high_sim_indices[:, 0] < high_sim_indices[:, 1]] # Undirected
-        
-        for idx in range(high_sim_indices.size(0)):
-            i, j = high_sim_indices[idx].tolist()
-            u, v = node_ids[i], node_ids[j]
-            similarity = float(similarity_matrix[i, j].item())
-            if self.nx_graph.has_edge(u, v):
-                current_weight = self.nx_graph[u][v].get('weight', 1.0)
-                self.nx_graph[u][v]['weight'] = min(current_weight + 0.1, 1.0)
-            else:
+        if num_nodes > SHARD_SIZE:
+            # PHYSICS SHARDING: Avoid O(N^2) RAM explosion by clustering nodes into random dynamic neighborhoods
+            logger.info(f"[LGNN] Applying Physics Sharding: Selecting random {SHARD_SIZE}-node neighborhood.")
+            shard_indices = torch.randperm(num_nodes, device=refined_states.device)[:SHARD_SIZE]
+            shard_states = normalized_states[shard_indices]
+            shard_mask = mask[shard_indices]
+            
+            similarity_matrix = torch.matmul(shard_states, shard_states.T)
+            valid_mask = torch.outer(shard_mask, shard_mask)
+            valid_mask.fill_diagonal_(0.0) # No self-edges
+            similarity_matrix = similarity_matrix * valid_mask
+            
+            high_sim_indices = torch.nonzero(similarity_matrix >= self.resonance_threshold, as_tuple=False)
+            high_sim_indices = high_sim_indices[high_sim_indices[:, 0] < high_sim_indices[:, 1]] # Undirected
+            
+            for idx in range(high_sim_indices.size(0)):
+                i_local, j_local = high_sim_indices[idx].tolist()
+                i = shard_indices[i_local].item()
+                j = shard_indices[j_local].item()
+                u, v = node_ids[i], node_ids[j]
+                similarity = float(similarity_matrix[i_local, j_local].item())
+                if self.nx_graph.has_edge(u, v):
+                    current_weight = self.nx_graph[u][v].get('weight', 1.0)
+                    self.nx_graph[u][v]['weight'] = min(current_weight + 0.1, 1.0)
+                else:
+                    self.nx_graph.add_edge(u, v, weight=similarity)
+                    logger.info(f"[LGNN] Shard Spawned bridge '{u}' <-> '{v}' (Sim: {similarity:.2f})")
+        else:
+            # O(N^2) Full Matrix for small graphs
+            similarity_matrix = torch.matmul(normalized_states, normalized_states.T)
+            valid_mask = torch.outer(mask, mask)
+            valid_mask.fill_diagonal_(0.0) # No self-edges
+            similarity_matrix = similarity_matrix * valid_mask
+            
+            high_sim_indices = torch.nonzero(similarity_matrix >= self.resonance_threshold, as_tuple=False)
+            high_sim_indices = high_sim_indices[high_sim_indices[:, 0] < high_sim_indices[:, 1]] # Undirected
+            
+            for idx in range(high_sim_indices.size(0)):
+                i, j = high_sim_indices[idx].tolist()
+                u, v = node_ids[i], node_ids[j]
+                similarity = float(similarity_matrix[i, j].item())
+                if self.nx_graph.has_edge(u, v):
+                    current_weight = self.nx_graph[u][v].get('weight', 1.0)
+                    self.nx_graph[u][v]['weight'] = min(current_weight + 0.1, 1.0)
+                else:
                 self.nx_graph.add_edge(u, v, weight=0.5)
                 logger.info(f"[LGNN] Spawned bridge '{u}' <-> '{v}' (Sim: {similarity:.2f})")
                 

@@ -20,6 +20,13 @@ class AethelEngine:
         self.connected_clients: List[WebSocket] = []
         self.graph_lock = asyncio.Lock()
 
+    def get_symbol_conviction(self, symbol: str) -> float:
+        """
+        Schnittstelle für die BrainEngineFull. 
+        Liest die aktuelle Trading-Conviction für ein Symbol aus dem Graph aus.
+        """
+        return self.graph.get_node_conviction(symbol)
+
     async def ignition_loop(self, tick_interval: float = 1.0):
         """
         The continuous background loop that evolves the graph over time.
