@@ -278,8 +278,8 @@ class LiquidGraph(nn.Module):
                     current_weight = self.nx_graph[u][v].get('weight', 1.0)
                     self.nx_graph[u][v]['weight'] = min(current_weight + 0.1, 1.0)
                 else:
-                self.nx_graph.add_edge(u, v, weight=0.5)
-                logger.info(f"[LGNN] Spawned bridge '{u}' <-> '{v}' (Sim: {similarity:.2f})")
+                    self.nx_graph.add_edge(u, v, weight=0.5)
+                    logger.info(f"[LGNN] Spawned bridge '{u}' <-> '{v}' (Sim: {similarity:.2f})")
                 
         # Fast bulk decay of existing edges
         edges = list(self.nx_graph.edges(data=True))
