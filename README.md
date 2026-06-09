@@ -1,41 +1,68 @@
-# Aethelnet Core 🧠💧
+# Aethelnet Core: Continuous-Time Liquid Graph Neural Networks
 
-**Aethelnet Core** is the mathematical and logical foundation of the Liquid Graph Neural Network (LGNN). It provides a continuously evolving, non-Euclidean representation of concepts, beliefs, and observations using continuous-time Ordinary Differential Equations (ODEs).
+Aethelnet Core is the mathematical foundation of the Liquid Graph Neural Network (LGNN) architecture. It completely replaces the discrete-time, static weight matrices of traditional Deep Learning with a continuous-time, dynamic topological state machine governed by Ordinary Differential Equations (ODEs).
 
-## Architecture
+This repository contains the pure physics and mathematical engine. For the cybernetic daemon, P2P mesh network, and sensory ingestion layers, refer to the `aethelnet-node` repository.
 
-At its heart, Aethelnet is an information ecosystem. It doesn't just store data; it allows data to organically grow, decay, and form emergent connections over time.
+## Theoretical Architecture
 
-### Liquid Graph (`liquid_graph.py`)
-- **Continuous ODE Solvers:** Uses `torchdiffeq` to simulate continuous flow.
-- **Physics Sharding:** Solves the $O(N^2)$ memory bottleneck via Stochastic Neighborhood Evolution. Graph interactions scale linearly, allowing for millions of active nodes on consumer hardware.
-- **Dynamic Topology:** Nodes naturally form bridges (Hebbian learning) when their multi-dimensional embeddings resonate, and sever bridges when they drift apart.
+At its core, the Aethelnet LGNN is a non-Euclidean information ecosystem. The graph topology is entirely fluid: nodes organically drift, form bridges based on Hebbian resonance, and decay over time if unsupported by external sensory stimuli or internal recursive validation.
+
+### 1. The ODE Topology Engine
+The network state does not progress in discrete inference steps. Instead, the continuous flow of the node activation state $h(t)$ is solved using Neural ODEs:
+
+$$ \frac{dh_i(t)}{dt} = -\tau_i h_i(t) + f\left( \sum_{j \in N(i)} W_{ij}(t) h_j(t) + I_i(t) \right) $$
+
+Where:
+*   **$\tau_i$**: The node-specific decay rate (thermodynamic cooling).
+*   **$W_{ij}(t)$**: The dynamic synaptic weight bridging concept $i$ and $j$.
+*   **$f(\cdot)$**: A non-linear squashing function (e.g., `tanh`).
+*   **$I_i(t)$**: External sensory stimuli.
+
+### 2. Hebbian Synaptic Plasticity
+Synaptic connections ($W_{ij}$) between concept nodes are governed by continuous Hebbian learning rules. The evolution of the weights is mathematically defined as:
+
+$$ \frac{dW_{ij}(t)}{dt} = \eta \cdot (h_i(t) \cdot h_j(t)) - \gamma \cdot W_{ij}(t) $$
+
+Nodes that fire together synchronously strengthen their geometric bond ($\eta$). Unused edges are continuously penalized by the weight decay factor ($\gamma$) until they hit zero and are automatically pruned from the adjacency matrix, effectively achieving dynamic sparsity.
+
+### 3. Physics Sharding (Stochastic Neighborhood Evolution)
+A fully connected graph evolving via ODEs poses an $O(N^2)$ memory and computational bottleneck. Aethelnet Core circumvents this via "Physics Sharding." The ODE solver only evaluates active topological neighborhoods defined by geometric proximity (cosine similarity thresholding). Graph interactions thus scale linearly, allowing for millions of active nodes on standard hardware.
 
 ## Installation
 
-Aethelnet Core is designed to be embedded into execution layers (like `aethelnet-node`).
+Aethelnet Core is built on PyTorch and `torchdiffeq`. It is designed to be embedded into external execution layers as the primary cognitive engine.
 
 ```bash
+git clone https://github.com/aethelnet/aethelnet-core.git
+cd aethelnet-core
 pip install -e .
 ```
 
-## Usage
+## Basic Usage
 
 ```python
 import torch
 from aethelnet.liquid_graph import LiquidGraph
 
-# Initialize the 768-D Information Space
+# Initialize the High-Dimensional Information Space
 lgnn = LiquidGraph(hidden_dim=768, resonance_threshold=0.85)
 
-# Seed an observation
+# Seed independent observations (t=0)
 lgnn.add_node("concept_a", torch.randn(768))
+lgnn.add_node("concept_b", torch.randn(768))
 
-# Run the continuous evolution physics engine
+# Run the continuous evolution physics engine (dt=1.0)
 lgnn.evolve_topology(compute_time=1.0)
 ```
 
-## Design Philosophy
+## Academic Research
 
-- **Decentralized Truth:** There is no single master node. Truth emerges from the topological consensus of the graph.
-- **Organic Decay:** Information that is not validated or reinforced slowly decays into noise, preventing context pollution.
+This framework serves as a testbed for researchers exploring:
+*   Continuous-time representation learning.
+*   Dynamical systems in Graph Neural Networks.
+*   Self-organizing, decentralized knowledge graphs.
+
+If you are applying Neural ODEs or Liquid Time-Constant Networks to macroscopic P2P topologies, we welcome your contributions to the core physics engine.
+
+*License: MIT*
