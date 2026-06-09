@@ -65,4 +65,4 @@ This framework serves as a testbed for researchers exploring:
 
 If you are applying Neural ODEs or Liquid Time-Constant Networks to macroscopic P2P topologies, we welcome your contributions to the core physics engine.
 
-*License: MIT*
+*License: AGPL-3.0*
