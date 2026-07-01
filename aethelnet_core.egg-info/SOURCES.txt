@@ -1,4 +1,5 @@
 LICENSE
+README.md
 setup.py
 aethelnet/__init__.py
 aethelnet/engine.py

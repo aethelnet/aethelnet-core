@@ -5,6 +5,7 @@ setup(
     version="1.0.0",
     description="Continuous Liquid Graph Neural Network (LGNN) Core Engine",
     author="Aethelnet",
+    license="AGPL-3.0",
     packages=find_packages(),
     install_requires=[
         "torch>=2.0.0",
