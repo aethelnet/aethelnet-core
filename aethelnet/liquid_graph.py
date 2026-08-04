@@ -16,7 +16,7 @@ class LiquidGraph(nn.Module):
     - Edges evolve dynamically based on Hebbian co-firing resonance.
     - Personas (sub-graphs) can be activated or deactivated dynamically.
     """
-    def __init__(self, hidden_dim: int = 768, resonance_threshold: float = 0.6, decay_rate: float = 0.05):
+    def __init__(self, hidden_dim: int = 768, resonance_threshold: float = 0.2, decay_rate: float = 0.05):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.resonance_threshold = resonance_threshold
@@ -35,6 +35,9 @@ class LiquidGraph(nn.Module):
         self.personas: Dict[str, List[str]] = {}
         # Active status: persona_name -> boolean
         self.active_personas: Dict[str, bool] = {}
+        
+        # Track node movement (historical variance) to assign Shielded (Axiom) Nodes
+        self.node_variances: Dict[str, float] = {}
         
         # Hardware speed tracker (virtual time / real time ratio)
         self.hardware_speed_factor: float = 1.0
@@ -112,7 +115,7 @@ class LiquidGraph(nn.Module):
 
         safe_id = self._safe_id(node_id)
         if safe_id in self.nodes:
-            logger.warning(f"[LGNN] Node {node_id} already exists. Updating embedding.")
+            logger.debug(f"[LGNN] Node {node_id} already exists. Updating embedding.")
             
         self.nodes[safe_id] = nn.Parameter(seed_embedding.clone().detach())
         self.nx_graph.add_node(node_id)
@@ -122,7 +125,7 @@ class LiquidGraph(nn.Module):
                 if self.nx_graph.has_node(target):
                     self.nx_graph.add_edge(node_id, target, weight=1.0)
         
-        logger.info(f"[LGNN] Spawned node: '{node_id}' with hidden dim {self.hidden_dim}.")
+        logger.debug(f"[LGNN] Spawned node: '{node_id}' with hidden dim {self.hidden_dim}.")
 
     def remove_node(self, node_id: str):
         safe_id = self._safe_id(node_id)
@@ -155,8 +158,11 @@ class LiquidGraph(nn.Module):
         latent_states = torch.nan_to_num(latent_states, nan=0.0, posinf=1.0, neginf=-1.0)
         
         # Get active node mask
-        safe_ids = list(self.nodes.keys())
-        node_ids = [self._original_id(sid) for sid in safe_ids]
+        node_ids = getattr(self, "cached_node_ids", None)
+        if node_ids is None:
+            safe_ids = list(self.nodes.keys())
+            node_ids = [self._original_id(sid) for sid in safe_ids]
+            
         q_nodes = getattr(self, "current_quarantined_nodes", None)
         mask = self.get_node_mask(node_ids, latent_states.device, quarantined_nodes=q_nodes)
         
@@ -170,16 +176,20 @@ class LiquidGraph(nn.Module):
         adj_matrix = getattr(self, "cached_adj_matrix", None)
         if adj_matrix is None:
             num_nodes = latent_states.size(0)
-            indices = torch.arange(num_nodes, device=latent_states.device).unsqueeze(0).repeat(2, 1)
-            values = torch.ones(num_nodes, device=latent_states.device)
-            adj_matrix = torch.sparse_coo_tensor(indices, values, size=(num_nodes, num_nodes)).coalesce()
+            adj_matrix = torch.eye(num_nodes, device=latent_states.device, dtype=torch.float32)
 
-        # Efficient Sparse-Dense Matrix Multiplication (Graph Convolution)
-        # We skip the heavy MultiheadAttention to achieve pure Sparse Tensor speed
-        relational_flow = torch.sparse.mm(adj_matrix, masked_states)
+        # Efficient Dense Matrix Multiplication (Graph Convolution)
+        # We skip the heavy MultiheadAttention to achieve pure speed
+        relational_flow = torch.matmul(adj_matrix, masked_states)
+        
+        # Shielded Nodes Flag Injection
+        # Axiom nodes (shielded) are mathematically frozen (dx/dt = 0)
+        shield_mask = getattr(self, "cached_shield_mask", None)
+        if shield_mask is None:
+            shield_mask = torch.ones_like(mask)
         
         # Combined gradient: dx/dt
-        grad = (local_flow + relational_flow * 0.1) * mask
+        grad = (local_flow + relational_flow * 0.1) * mask * shield_mask
         return torch.nan_to_num(grad, nan=0.0, posinf=1.0, neginf=-1.0)
 
     def evolve_topology(self, compute_time: float = 1.0, quarantined_nodes: List[str] = None):
@@ -196,15 +206,30 @@ class LiquidGraph(nn.Module):
         
         if len(self.nx_graph.edges) > 0:
             adj_scipy = nx.to_scipy_sparse_array(self.nx_graph, nodelist=node_ids, format="coo", weight="weight")
-            indices = torch.tensor(np.vstack((adj_scipy.row, adj_scipy.col)), dtype=torch.long)
-            values = torch.tensor(adj_scipy.data, dtype=torch.float32)
-            adj_matrix = torch.sparse_coo_tensor(indices, values, size=adj_scipy.shape).coalesce()
+            adj_matrix = torch.tensor(adj_scipy.todense(), dtype=torch.float32)
         else:
             num_nodes = len(node_ids)
-            adj_matrix = torch.sparse_coo_tensor(torch.empty((2, 0), dtype=torch.long), torch.empty(0), size=(num_nodes, num_nodes)).coalesce()
+            adj_matrix = torch.zeros((num_nodes, num_nodes), dtype=torch.float32)
             
         self.cached_adj_matrix = adj_matrix.to(initial_states.device)
         self.current_quarantined_nodes = quarantined_nodes
+        self.cached_node_ids = node_ids
+        
+        # Determine top 5 stable nodes to shield
+        stable_nodes = set()
+        if len(self.node_variances) >= 5:
+            sorted_nodes = sorted(self.node_variances.items(), key=lambda x: x[1])
+            stable_nodes = {nid for nid, var in sorted_nodes[:5]}
+            
+        shield_mask = torch.ones((len(node_ids), 1), device=initial_states.device, dtype=torch.float32)
+        for i, nid in enumerate(node_ids):
+            is_shield = (nid in stable_nodes)
+            self.nx_graph.nodes[nid]['is_shielded'] = is_shield
+            if is_shield:
+                shield_mask[i] = 0.0
+                logger.debug(f"[LGNN] Shielding Axiom Node: {nid}")
+        
+        self.cached_shield_mask = shield_mask
         
         # Solve the ODE
         t_span = torch.tensor([0.0, compute_time])
@@ -216,15 +241,26 @@ class LiquidGraph(nn.Module):
         finally:
             self.current_quarantined_nodes = None
             self.cached_adj_matrix = None
+            self.cached_node_ids = None
+            self.cached_shield_mask = None
         duration = time.perf_counter() - t0
         
         self.hardware_speed_factor = compute_time / (duration + 1e-8)
-        logger.info(f"[LGNN] Evolved topology. Wall-clock: {duration:.4f}s | Virtual: {compute_time}s | Speed Factor: {self.hardware_speed_factor:.2f}x")
+        logger.debug(f"[LGNN] Evolved topology. Wall-clock: {duration:.4f}s | Virtual: {compute_time}s | Speed Factor: {self.hardware_speed_factor:.2f}x")
         
-        # Update node parameters
+        # Update node parameters and historical variance
         with torch.no_grad():
+            movements = torch.norm(refined_states - initial_states, dim=1)
             for i, sid in enumerate(safe_ids):
                 self.nodes[sid].copy_(refined_states[i])
+                
+                # Update variance
+                orig_id = node_ids[i]
+                mov = movements[i].item()
+                if orig_id in self.node_variances:
+                    self.node_variances[orig_id] = 0.9 * self.node_variances[orig_id] + 0.1 * mov
+                else:
+                    self.node_variances[orig_id] = mov
                 
         # --- Fast Vectorized Hebbian Edge Evolution (WITH PHYSICS SHARDING) ---
         normalized_states = refined_states / (refined_states.norm(dim=-1, keepdim=True) + 1e-8)
@@ -259,7 +295,7 @@ class LiquidGraph(nn.Module):
                     self.nx_graph[u][v]['weight'] = min(current_weight + 0.1, 1.0)
                 else:
                     self.nx_graph.add_edge(u, v, weight=similarity)
-                    logger.info(f"[LGNN] Shard Spawned bridge '{u}' <-> '{v}' (Sim: {similarity:.2f})")
+                    logger.debug(f"[LGNN] Shard Spawned bridge '{u}' <-> '{v}' (Sim: {similarity:.2f})")
         else:
             # O(N^2) Full Matrix for small graphs
             similarity_matrix = torch.matmul(normalized_states, normalized_states.T)
@@ -279,7 +315,7 @@ class LiquidGraph(nn.Module):
                     self.nx_graph[u][v]['weight'] = min(current_weight + 0.1, 1.0)
                 else:
                     self.nx_graph.add_edge(u, v, weight=0.5)
-                    logger.info(f"[LGNN] Spawned bridge '{u}' <-> '{v}' (Sim: {similarity:.2f})")
+                    logger.debug(f"[LGNN] Spawned bridge '{u}' <-> '{v}' (Sim: {similarity:.2f})")
                 
         # Fast bulk decay of existing edges
         edges = list(self.nx_graph.edges(data=True))
