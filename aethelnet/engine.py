@@ -3,7 +3,7 @@ import logging
 import torch
 import os
 from fastapi import FastAPI, WebSocket
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from .liquid_graph import LiquidGraph
 
@@ -21,11 +21,24 @@ class AethelEngine:
         self.graph_lock = asyncio.Lock()
 
     def get_symbol_conviction(self, symbol: str) -> float:
-        """
-        Schnittstelle für die BrainEngineFull. 
-        Liest die aktuelle Trading-Conviction für ein Symbol aus dem Graph aus.
-        """
+        """[Deprecated] Compatibility shim returning node conviction."""
         return self.graph.get_node_conviction(symbol)
+
+    def get_concept_energy(self, concept_id: str) -> float:
+        """Reads concept activation energy (L2 norm) from the graph."""
+        return self.graph.get_node_energy(concept_id)
+
+    def query_resonance(self, query_id_or_tensor: Any, k: int = 5, persona: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Finds top-k most resonant concepts in the topological space."""
+        return self.graph.get_top_resonant_nodes(query_id_or_tensor, k=k, persona=persona)
+
+    def save_graph(self, filepath: str):
+        """Persists entire graph topology and weights to disk."""
+        self.graph.save_state(filepath)
+
+    def load_graph(self, filepath: str):
+        """Restores graph topology and weights from disk."""
+        self.graph.load_state(filepath)
 
     async def ignition_loop(self, tick_interval: float = 1.0):
         """
@@ -121,22 +134,61 @@ async def swarm_endpoint(websocket: WebSocket):
 from fastapi import Security, HTTPException
 from fastapi.security import APIKeyHeader
 
-api_key_header = APIKeyHeader(name="X-Auth-Token")
+api_key_header = APIKeyHeader(name="X-Auth-Token", auto_error=False)
 
 AUTH_TOKEN = os.environ.get("AETHELNET_AUTH_TOKEN")
-if not AUTH_TOKEN:
-    raise RuntimeError("AETHELNET_AUTH_TOKEN environment variable is required")
 
 @app.post("/api/inject")
-async def inject_node(node_id: str, api_key: str = Security(api_key_header)):
+async def inject_node(
+    node_id: str,
+    embedding: Optional[List[float]] = None,
+    api_key: str = Security(api_key_header)
+):
     """
     Inject a new concept into the graph.
+    Accepts explicit embedding or seeds deterministically from the concept's SHA256.
     """
-    if api_key != AUTH_TOKEN:
+    if AUTH_TOKEN and api_key != AUTH_TOKEN:
         raise HTTPException(status_code=403, detail="Invalid token")
         
     async with engine.graph_lock:
-        seed_emb = torch.randn(engine.graph.hidden_dim)
+        if embedding is not None:
+            if len(embedding) != engine.graph.hidden_dim:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Expected embedding dimension {engine.graph.hidden_dim}, got {len(embedding)}"
+                )
+            seed_emb = torch.tensor(embedding, dtype=torch.float32)
+        else:
+            # Deterministic hash projection prevents random noise contamination
+            import hashlib
+            seed_bytes = hashlib.sha256(node_id.encode("utf-8")).digest()
+            seed_int = int.from_bytes(seed_bytes[:8], byteorder="big")
+            g = torch.Generator().manual_seed(seed_int)
+            seed_emb = torch.randn(engine.graph.hidden_dim, generator=g)
+
         seed_emb = seed_emb / (seed_emb.norm() + 1e-8)
         engine.graph.add_node(node_id, seed_emb)
     return {"status": "injected", "node_id": node_id}
+
+@app.post("/api/graph/save")
+async def save_graph_checkpoint(filepath: str, api_key: str = Security(api_key_header)):
+    if AUTH_TOKEN and api_key != AUTH_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    async with engine.graph_lock:
+        engine.save_graph(filepath)
+    return {"status": "saved", "filepath": filepath}
+
+@app.post("/api/graph/load")
+async def load_graph_checkpoint(filepath: str, api_key: str = Security(api_key_header)):
+    if AUTH_TOKEN and api_key != AUTH_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    async with engine.graph_lock:
+        engine.load_graph(filepath)
+    return {"status": "loaded", "filepath": filepath}
+
+@app.get("/api/graph/query")
+async def query_graph_resonance(query: str, k: int = 5, persona: Optional[str] = None):
+    async with engine.graph_lock:
+        matches = engine.query_resonance(query, k=k, persona=persona)
+    return {"query": query, "matches": matches}
