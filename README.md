@@ -3,7 +3,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Architecture: Neural ODE](https://img.shields.io/badge/Topology-Neural_ODE_Continuous-emerald.svg)](https://aethelburg.network)
-[![Tests: 35/35 Passing](https://img.shields.io/badge/Tests-35%2F35%20Passing-brightgreen.svg)](tests/)
+[![tests](https://github.com/aethelnet/aethelnet-core/actions/workflows/tests.yml/badge.svg)](https://github.com/aethelnet/aethelnet-core/actions/workflows/tests.yml)
 
 **Aethelnet Core** is the mathematical foundation and client SDK for the Aethelnet Cognitive Network. It provides:
 1. **`AethelnetClient`**: Zero-dependency headless Python client to interact with live production nodes, evidentiary multigraph ledgers, and on-chain notarization contracts.
@@ -17,7 +17,7 @@
 The headless client provides full programmatic access to any local or remote Aethelnet node (`https://aethelburg.network` or `http://localhost:8000`):
 
 ```bash
-pip install -e packages/aethelnet-core
+pip install git+https://github.com/aethelnet/aethelnet-core.git
 ```
 
 ```python
@@ -156,11 +156,11 @@ Aethelnet's mathematical architecture is domain-invariant:
 
 ```bash
 # Clone repository
-git clone https://github.com/ProphitEngine/auratic-systems-prime.git
-cd auratic-systems-prime/packages/aethelnet-core
+git clone https://github.com/aethelnet/aethelnet-core.git
+cd aethelnet-core
 
-# Install in editable mode
-pip install -e .
+# Install in editable mode with test dependencies
+pip install -e ".[dev]"
 
 # Run test suite
 pytest tests/ -v
