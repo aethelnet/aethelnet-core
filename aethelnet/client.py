@@ -37,6 +37,8 @@ Example usage:
 """
 
 import json
+import os
+import urllib.parse
 import urllib.request
 import urllib.error
 from typing import Dict, Any, List, Optional
@@ -46,12 +48,16 @@ class AethelnetClient:
     """
     Headless HTTP Client for Aethelnet Causal Nodes & Multigraphs.
     Zero external dependencies (uses standard library urllib).
+
+    Write operations on a node need its token: pass `token=...` or set
+    AETHELNET_AUTH_TOKEN in the environment. It is sent as a Bearer header.
     """
-    def __init__(self, base_url: str = "https://aethelburg.network", api_prefix: str = "/api", timeout: int = 120):
+    def __init__(self, base_url: str = "https://aethelburg.network", api_prefix: str = "/api", timeout: int = 120, token: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.api_prefix = api_prefix.rstrip("/")
         self.endpoint = f"{self.base_url}{self.api_prefix}"
         self.timeout = timeout
+        self.token = (token if token is not None else os.getenv("AETHELNET_AUTH_TOKEN", "")).strip()
 
     def _request(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         url = f"{self.endpoint}{path}"
@@ -65,6 +71,8 @@ class AethelnetClient:
             "Content-Type": "application/json",
             "User-Agent": "Aethelnet-SDK-Python/2.0"
         }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
 
         req = urllib.request.Request(url, data=data, headers=headers, method=method.upper())
         try:
@@ -174,7 +182,7 @@ class AethelnetClient:
 
     def get_dedup_candidates(self, app_id: str, min_confidence: float = 0.88, limit: int = 50) -> List[Dict[str, Any]]:
         """Scans for potential duplicate entities (aliases, honorific variants, typos)."""
-        params = {"threshold": min_confidence, "limit": limit}
+        params = {"min_confidence": min_confidence, "limit": limit}
         res = self._request("GET", f"/ontology/multigraph/{app_id}/dedup_candidates", params=params)
         return res.get("candidates", [])
 
