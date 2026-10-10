@@ -175,5 +175,67 @@ class TestLiquidGraph(unittest.TestCase):
                 os.remove(save_path)
 
 
+def _random_graph(n=120, dim=32, n_edges=400, seed=0):
+    gen = torch.Generator().manual_seed(seed)
+    X = torch.nn.functional.normalize(torch.randn(n, dim, generator=gen), dim=1)
+    edges = set()
+    while len(edges) < n_edges:
+        u, v = torch.randint(0, n, (2,), generator=gen).tolist()
+        if u != v:
+            edges.add((min(u, v), max(u, v)))
+    graph = LiquidGraph(hidden_dim=dim, resonance_threshold=1.01)
+    for i in range(n):
+        graph.add_node(f"n{i}", X[i])
+    for u, v in edges:
+        graph.nx_graph.add_edge(f"n{u}", f"n{v}", weight=1.0)
+    return graph, X, edges
+
+
+class TestEvolutionDynamics(unittest.TestCase):
+
+    def test_evolution_matches_reference_dynamics(self):
+        """Pins the current dynamics dx/dt = 0.35 (D^-1 A - I) x - tether (x - x0).
+
+        Its exact solution is computed in closed form here. If the model is changed on
+        purpose (e.g. made nonlinear), update this reference in the same PR.
+        """
+        graph, X, edges = _random_graph()
+        n, T, alpha, lam = X.shape[0], 1.0, 0.35, graph.tether_strength
+        graph.evolve_topology(compute_time=T)
+        out = torch.stack([graph.get_node_embedding(f"n{i}") for i in range(n)])
+
+        A = torch.zeros(n, n)
+        for u, v in edges:
+            A[u, v] = A[v, u] = 1.0
+        I = torch.eye(n)
+        M = alpha * (A / A.sum(1, keepdim=True).clamp(min=1.0) - I) - lam * I
+        E = torch.matrix_exp(M * T)
+        ref = torch.nn.functional.normalize(E @ X + torch.linalg.solve(M, (E - I) @ (lam * X)), dim=1)
+        self.assertLess(float((out - ref).abs().max()), 1e-5)
+
+    def test_solve_does_not_record_autograd_graph(self):
+        """Nothing backpropagates through evolve_topology; recording the graph cost ~40x memory."""
+        graph, _, _ = _random_graph(n=40, n_edges=80)
+        grad_enabled_in_forward = []
+        original_forward = graph.forward
+
+        def spy(t, x):
+            grad_enabled_in_forward.append(torch.is_grad_enabled() or x.requires_grad)
+            return original_forward(t, x)
+
+        graph.forward = spy
+        graph.evolve_topology(compute_time=0.3)
+        self.assertTrue(grad_enabled_in_forward)
+        self.assertFalse(any(grad_enabled_in_forward))
+
+    def test_isolated_nodes_and_empty_graph(self):
+        graph = LiquidGraph(hidden_dim=16, resonance_threshold=1.01)
+        v = torch.nn.functional.normalize(torch.randn(16), dim=0)
+        graph.add_node("solo", v)
+        graph.evolve_topology(compute_time=0.5)
+        # An isolated node only feels the tether, so its direction is unchanged
+        self.assertTrue(torch.allclose(graph.get_node_embedding("solo"), v, atol=1e-6))
+
+
 if __name__ == "__main__":
     unittest.main()

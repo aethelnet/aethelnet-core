@@ -271,23 +271,30 @@ class LiquidGraph(nn.Module):
             safe_ids = list(self.nodes.keys())
             node_ids = [self._original_id(sid) for sid in safe_ids]
             
-        q_nodes = getattr(self, "current_quarantined_nodes", None)
-        mask = self.get_node_mask(node_ids, latent_states.device, quarantined_nodes=q_nodes)
-        
+        # The mask is constant during one solve; evolve_topology computes it once
+        mask = getattr(self, "cached_mask", None)
+        if mask is None:
+            q_nodes = getattr(self, "current_quarantined_nodes", None)
+            mask = self.get_node_mask(node_ids, latent_states.device, quarantined_nodes=q_nodes)
+
         # Apply mask to node states
         masked_states = latent_states * mask
-        
-        # 1. Relational flow using normalized Graph Laplacian diffusion
-        adj_matrix = getattr(self, "cached_adj_matrix", None)
-        if adj_matrix is None:
-            num_nodes = latent_states.size(0)
-            adj_matrix = torch.eye(num_nodes, device=latent_states.device, dtype=torch.float32)
 
-        # Row-normalize adjacency to prevent unbounded energy amplification:
-        # L = D^-1 * A - I (continuous Laplacian diffusion)
-        deg = adj_matrix.sum(dim=1, keepdim=True).clamp(min=1.0)
-        norm_adj = adj_matrix / deg
-        relational_flow = torch.matmul(norm_adj, masked_states) - masked_states
+        # 1. Relational flow using normalized Graph Laplacian diffusion
+        # L = D^-1 * A - I (continuous Laplacian diffusion), row-normalized to prevent
+        # unbounded energy amplification
+        norm_adj = getattr(self, "cached_norm_adj", None)
+        if norm_adj is not None:
+            # Sparse D^-1 A precomputed once per evolve_topology call: memory scales with edges, not N^2
+            relational_flow = torch.sparse.mm(norm_adj, masked_states) - masked_states
+        else:
+            adj_matrix = getattr(self, "cached_adj_matrix", None)
+            if adj_matrix is None:
+                num_nodes = latent_states.size(0)
+                adj_matrix = torch.eye(num_nodes, device=latent_states.device, dtype=torch.float32)
+            deg = adj_matrix.sum(dim=1, keepdim=True).clamp(min=1.0)
+            norm_adj = adj_matrix / deg
+            relational_flow = torch.matmul(norm_adj, masked_states) - masked_states
         
         # Shielded Nodes Flag Injection
         # Axiom nodes (shielded) are mathematically frozen (dx/dt = 0)
@@ -320,22 +327,32 @@ class LiquidGraph(nn.Module):
             
         safe_ids = list(self.nodes.keys())
         node_ids = [self._original_id(sid) for sid in safe_ids]
-        initial_states = torch.stack([self.nodes[sid] for sid in safe_ids])
-        
-        # Build Sparse COO Tensor from NetworkX
-        import scipy.sparse as sp
+        # Node states are nn.Parameters, but nothing ever backpropagates through the solve.
+        # Detaching (and solving under no_grad below) stops autograd from keeping every RK4
+        # intermediate alive, which made peak memory ~40x the size of the adjacency.
+        initial_states = torch.stack([self.nodes[sid].detach() for sid in safe_ids])
+        num_nodes = len(node_ids)
+
+        # Build Sparse COO Tensor from NetworkX and row-normalize it once (D^-1 A)
         import numpy as np
-        
+
         if len(self.nx_graph.edges) > 0:
             adj_scipy = nx.to_scipy_sparse_array(self.nx_graph, nodelist=node_ids, format="coo", weight="weight")
-            adj_matrix = torch.tensor(adj_scipy.todense(), dtype=torch.float32)
+            rows = torch.as_tensor(adj_scipy.row, dtype=torch.long)
+            cols = torch.as_tensor(adj_scipy.col, dtype=torch.long)
+            vals = torch.as_tensor(adj_scipy.data, dtype=torch.float32)
         else:
-            num_nodes = len(node_ids)
-            adj_matrix = torch.zeros((num_nodes, num_nodes), dtype=torch.float32)
-            
-        self.cached_adj_matrix = adj_matrix.to(initial_states.device)
+            rows = cols = torch.empty(0, dtype=torch.long)
+            vals = torch.empty(0, dtype=torch.float32)
+        deg = torch.zeros(num_nodes, dtype=torch.float32).index_add_(0, rows, vals).clamp(min=1.0)
+        norm_adj = torch.sparse_coo_tensor(
+            torch.stack([rows, cols]), vals / deg[rows], (num_nodes, num_nodes), check_invariants=True
+        ).coalesce()
+
+        self.cached_norm_adj = norm_adj.to(initial_states.device)
         self.current_quarantined_nodes = quarantined_nodes
         self.cached_node_ids = node_ids
+        self.cached_mask = self.get_node_mask(node_ids, initial_states.device, quarantined_nodes=quarantined_nodes)
 
         # Cache anchor matrix for Elastic Tether
         anchors_list = []
@@ -367,12 +384,14 @@ class LiquidGraph(nn.Module):
         t0 = time.perf_counter()
         
         try:
-            refined_states = odeint(self, initial_states, t_span, method='rk4', options={'step_size': 0.1})[-1]
-            refined_states = torch.nan_to_num(refined_states, nan=0.0, posinf=1.0, neginf=-1.0)
-            refined_states = torch.nn.functional.normalize(refined_states, p=2, dim=-1)
+            with torch.no_grad():
+                refined_states = odeint(self, initial_states, t_span, method='rk4', options={'step_size': 0.1})[-1]
+                refined_states = torch.nan_to_num(refined_states, nan=0.0, posinf=1.0, neginf=-1.0)
+                refined_states = torch.nn.functional.normalize(refined_states, p=2, dim=-1)
         finally:
             self.current_quarantined_nodes = None
-            self.cached_adj_matrix = None
+            self.cached_norm_adj = None
+            self.cached_mask = None
             self.cached_node_ids = None
             self.cached_shield_mask = None
             self.cached_anchor_matrix = None
