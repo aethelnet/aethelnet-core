@@ -330,6 +330,9 @@ class LiquidGraph(nn.Module):
         # Node states are nn.Parameters, but nothing ever backpropagates through the solve.
         # Detaching (and solving under no_grad below) stops autograd from keeping every RK4
         # intermediate alive, which made peak memory ~40x the size of the adjacency.
+        # NOTE (Architectural Handover): If End-to-End Neural ODE Training with backpropagation
+        # through the solve is ever needed, DO NOT re-enable naive autograd BPTT. Instead,
+        # use the Adjoint Sensitivity Method (torchdiffeq.odeint_adjoint) to preserve O(1) memory!
         initial_states = torch.stack([self.nodes[sid].detach() for sid in safe_ids])
         num_nodes = len(node_ids)
 
