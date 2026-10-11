@@ -6,6 +6,7 @@ the verdict, and is meant to be re-run when the code changes.
 | Notebook | What it checks |
 |---|---|
 | [`lgnn_validation.ipynb`](lgnn_validation.ipynb) | `LiquidGraph` dynamics, learned modules, memory scaling, sharding, the edge rule, task value vs. baselines, and the tether |
+| [`recall_benchmark.ipynb`](recall_benchmark.ipynb) | Idea #1 / milestone: which retrieval should `lgnn_topological_recovery` use? Lexical, dense, hybrid, graph spreading activation and LiquidGraph smoothing on 136 queries from our own git history (clones the repos into `~/.cache/aethelnet-bench`, ~15 min the first time) |
 
 The `.py` file next to each notebook is the source of truth ([Jupytext](https://jupytext.readthedocs.io) percent
 format, readable diffs); the `.ipynb` is generated from it and committed with outputs so results render on GitHub.
