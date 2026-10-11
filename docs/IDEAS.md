@@ -15,6 +15,8 @@ Add new ideas at the bottom; claim one before working on it (see [COLLABORATION.
 | 7 | **Federated agent memory**: every agent/human runs a node, peers exchange "grains of truth" | Open gossip endpoints, id-comparison bugs | explored | node `cefee0c` (peer token, from PR #5) | Per-peer identity (signed messages) instead of one shared peer token; quarantine on contradiction |
 | 8 | **Make the graph truly "liquid"**: learnable time constants, inputs, nonlinear dynamics | README described dynamics the code doesn't have | raw | notebook §1 | LTC/CfC-style dynamics, trained; see AGENT-NOTEs below |
 | 9 | **Self-critique loop with metrics**: Ouroboros feeds LLM critique back into the graph | No evaluation, risk of drift | raw | — | Define a quality metric first, then run the loop against it |
+| 10 | **Fair source weighting for restitution research**: oral traditions of source communities as first-class evidence, not "unverified statements" | `weights.py` ranks colonial military registers at 0.95 and oral statements at 0.30, so a museum's deed of gift (0.75) outweighs a community's oral history | raw | node `weights.py`, README tier list | Separate *source type* from *reliability*; give oral history its own category and corroboration rules; document the weights as a research decision, ideally with provenance researchers and source-community representatives |
+| 11 | **Researcher-confirmed provenance matches**: automated museum-API matches become candidates, not facts | DDB / museum-digital name matches write `LAGERT_IN` edges automatically | raw | project-echo README | Store matches with confidence and a `pending_review` state; a researcher confirms before the edge counts in conflicts or goes public |
 
 ## Agent notes on ideas
 
