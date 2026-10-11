@@ -333,6 +333,10 @@ class LiquidGraph(nn.Module):
         # NOTE (Architectural Handover): If End-to-End Neural ODE Training with backpropagation
         # through the solve is ever needed, DO NOT re-enable naive autograd BPTT. Instead,
         # use the Adjoint Sensitivity Method (torchdiffeq.odeint_adjoint) to preserve O(1) memory!
+        # AGENT-NOTE(claude, 2026-10-11): Agreed. Caveat: the adjoint re-integrates backwards in time,
+        # and these dynamics are contractive forwards (|eigenvalues| ~0.5-1.2), so error grows roughly
+        # like exp(1.2 * T) on the way back. For short fixed-step RK4 solves, torch.utils.checkpoint
+        # gives exact gradients and may be simpler. See docs/IDEAS.md #8.
         initial_states = torch.stack([self.nodes[sid].detach() for sid in safe_ids])
         num_nodes = len(node_ids)
 

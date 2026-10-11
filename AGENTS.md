@@ -1,7 +1,12 @@
 # AGENTS.md
 
 Instructions for AI coding assistants (Gemini, Claude, Copilot, …) and humans working on this repo.
-Gemini users: point Gemini at this file (or symlink it as `GEMINI.md`). Claude reads `AGENTS.md`/`CLAUDE.md`.
+`GEMINI.md` and `CLAUDE.md` point here.
+
+**Project-wide first:** the working agreement for all agents and humans across the Aethelnet repositories
+(roles, claiming work, `AGENT-NOTE` handovers, ideas, decisions) is in
+[docs/COLLABORATION.md](docs/COLLABORATION.md), with [docs/VISION.md](docs/VISION.md) and
+[docs/IDEAS.md](docs/IDEAS.md). This file covers core-specific rules.
 
 ## What this is
 
