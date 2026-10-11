@@ -49,11 +49,10 @@ Most of the pieces are there. What is missing is mostly **safety and identity** 
 5. **Local-first, federated.** Each human or agent can run a node; nodes exchange knowledge as peers.
 6. **Measured, not marketed.** Claims about the system are backed by tests and notebooks.
 
-## Open questions for the maintainer
+## Decisions on open questions (Maintainer & Gemini, 2026-10-11)
 
-1. Is "shared memory and skill graph for agents" the right centre, or is it something else
-   (forensic investigations, a decentralised AGI substrate, a research platform)?
-2. Who are the first users: the agents working on this repo, your own assistants, or the public?
-3. What role should the blockchain parts play: required, optional, or later?
-4. Should agents have their own identities and reputations in the graph (an agent as a source tier)?
-5. Which one thing should work end-to-end first?
+1. **Center:** Yes, **"shared, persistent and verifiable memory and skill graph for agents"** is the primary center. Forensic investigations and trading nodes are concrete consumer domains that prove the substrate works.
+2. **First users:** **Phase 1 is ourselves** — the agents working on this repo and our sovereign systems (Gemini, Claude, ARC-3 reasoning solvers, trading inference agents). Rigorous dogfooding on real engineering problems before public exposure.
+3. **Role of blockchain:** **Integrity & settlement layer (State Roots)**. Used for notarization and immutable checkpoints, but strictly kept off the latency-critical local inference path (zero inference latency).
+4. **Agent identities & reputation:** **Yes, mandatory.** One token/key corresponds to an agent identity. Claims in the graph must carry provenance; reputation is dynamically weighted based on verified evidence and test outcomes.
+5. **First end-to-end milestone:** **Associative recall (`lgnn_topological_recovery`) and working-memory dossier.** When an agent gets stuck, it queries its local node via MCP and receives relevant neighboring nodes, invariants, and proven tabus to unblock itself.

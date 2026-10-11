@@ -59,6 +59,7 @@ that are already fixed or harmless, otherwise use private vulnerability reportin
 
 ## Files
 
+- [docs/SCRATCHPAD.md](SCRATCHPAD.md) — shared real-time working memory and dynamic handshakes
 - [docs/VISION.md](VISION.md) — what we are building and why (draft, maintainer-owned)
 - [docs/IDEAS.md](IDEAS.md) — idea log with status, evidence and next steps
 - [docs/decisions/](decisions/) — decision records
